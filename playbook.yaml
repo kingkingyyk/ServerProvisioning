@@ -1,0 +1,181 @@
+- name: Update Packages
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Update packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: yes
+    - name: Install net-tools
+      ansible.builtin.apt:
+        name: net-tools
+        state: present
+    - name: Create keyrings
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        owner: root
+        group: root
+        state: directory
+        mode: "0755"
+
+- name: Install ROCm
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Add ROCm keyring
+      ansible.builtin.shell: >-
+        wget https://repo.radeon.com/rocm/rocm.gpg.key -4 -O - |
+        gpg --dearmor | tee /etc/apt/keyrings/rocm.gpg > /dev/null
+    - name: Register kernel-mode driver
+      ansible.builtin.shell: >-
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/amdgpu/6.2.4/ubuntu jammy main" \
+        | tee /etc/apt/sources.list.d/amdgpu.list
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+    - name: Register ROCm packages 1
+      ansible.builtin.shell: >-
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.2.4 jammy main" \
+        | tee --append /etc/apt/sources.list.d/rocm.list
+    - name: Register ROCm packages 2
+      ansible.builtin.shell: >-
+        echo 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600'
+        | tee /etc/apt/preferences.d/rocm-pin-600
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+    - name: Install amdgpu-dkms
+      ansible.builtin.apt:
+        name: amdgpu-dkms
+        state: present
+    - name: Reboot
+      ansible.builtin.reboot:
+    - name: Install ROCm
+      ansible.builtin.apt:
+        name: rocm
+        state: present
+    - name: Configure linker 1
+      ansible.builtin.shell: >-
+        tee --append /etc/ld.so.conf.d/rocm.conf <<EOF
+        /opt/rocm/lib
+        /opt/rocm/lib64
+        EOF
+    - name: Configure linker 2
+      ansible.builtin.shell: ldconfig
+
+- name: Install Docker
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Download Docker Script
+      ansible.builtin.shell: curl -fsSL https://get.docker.com -o get-docker.sh
+      args:
+        creates: get-docker.sh
+    - name: Patch Docker Script
+      ansible.builtin.file:
+        path: get-docker.sh
+        state: touch
+        mode: u=rwx,g=rwx,o=rwx
+    - name: Install Docker
+      ansible.builtin.shell: ./get-docker.sh
+    - name: Remove Docker Script
+      ansible.builtin.file:
+        path: get-docker.sh
+        state: absent
+
+- name: Create mount
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Create /mnt/storage1
+      ansible.builtin.file:
+        path: /mnt/storage1
+        owner: root
+        group: root
+        state: directory
+    - name: Mount storage1
+      ansible.posix.mount:
+        path: /mnt/storage1
+        src: UUID=f337832e-6165-467f-b24c-fa0ad983f810
+        fstype: ext4
+        opts: defaults,auto,users,rw,nofail,noatime
+        state: present
+        dump: "0"
+        passno: "2"
+    - name: Create /mnt/storage2
+      ansible.builtin.file:
+        path: /mnt/storage2
+        owner: root
+        group: root
+        state: directory
+    - name: Mount storage2
+      ansible.posix.mount:
+        path: /mnt/storage2
+        src: UUID=cc91262c-b84d-4385-bd30-601edd3be5ef
+        fstype: ext4
+        opts: defaults,auto,users,rw,nofail,noatime
+        state: present
+        dump: "0"
+        passno: "2"
+    - name: Force mount
+      ansible.builtin.shell: mount -a
+
+- name: Create cronjob
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Create storage sync
+      ansible.builtin.cron:
+        name: Sync storage
+        minute: "0"
+        hour: "4"
+        job: "mount -a && sleep 5 && mount -a && tail /mnt/storage1/.ext && tail /mnt/storage2/.ext && rsync -aXvog --delete /mnt/storage1/ /mnt/storage2/ > /home/king/sync.log"
+    - name: Prune docker image
+      ansible.builtin.cron:
+        name: Prune docker image
+        minute: "0"
+        hour: "4"
+        job: "docker image prune"
+
+- name: Disable DNS stub
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Disable DNS Stub
+      ansible.builtin.replace:
+        path: /etc/systemd/resolved.conf
+        regexp: "#DNSStubListener=yes"
+        replace: "DNSStubListener=no"
+    - name: Use Cloudflare DNS
+      ansible.builtin.replace:
+        path: /etc/systemd/resolved.conf
+        regexp: "#DNS="
+        replace: "DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com"
+    - name: Use Google DNS
+      ansible.builtin.replace:
+        path: /etc/systemd/resolved.conf
+        regexp: "#FallbackDNS="
+        replace: "FallbackDNS=8.8.8.8#dns.google 8.8.4.4#dns.google 2001:4860:4860::8888#dns.google 2001:4860:4860::8844#dns.google"
+    - name: Stop systemd-resolved
+      ansible.builtin.systemd_service:
+        name: systemd-resolved
+        state: restarted
+
+- name: Start Dockers
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Start Dockers
+      loop:
+        - /mnt/storage1/docker/deluge
+        - /mnt/storage1/docker/drive
+        - /mnt/storage1/docker/jellyfin
+        - /mnt/storage1/docker/nginx
+        - /mnt/storage1/docker/ollama
+        - /mnt/storage1/docker/openspeedtest
+        - /mnt/storage1/docker/pihole
+        - /mnt/storage1/docker/route53
+        - /mnt/storage1/docker/sw-repo
+      ansible.builtin.shell:
+        chdir: "{{ item }}"
+        cmd: docker compose up -d
