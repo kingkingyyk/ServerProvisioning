@@ -137,6 +137,37 @@
         hour: "4"
         job: "docker image prune"
 
+- name: Setup SMB
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Install Samba
+      ansible.builtin.apt:
+        name: samba
+        state: present
+    - name: Set samba config
+      ansible.builtin.copy:
+        dest: /etc/samba/smb.conf
+        content: |
+          [global]
+          map to guest = bad user
+          acl allow execute always = yes
+          server min protocol = SMB3
+
+          [Storage]
+          path = /mnt/storage1
+          guest ok = yes
+          guest only = yes
+          read only = yes
+    - name: Restart smbd
+      ansible.builtin.systemd_service:
+        name: smbd
+        state: restarted
+    - name: Restart nmbd
+      ansible.builtin.systemd_service:
+        name: nmbd
+        state: restarted
+
 - name: Disable DNS stub
   become: yes
   hosts: myserver
