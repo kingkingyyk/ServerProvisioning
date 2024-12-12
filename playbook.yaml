@@ -137,6 +137,28 @@
         hour: "4"
         job: "docker image prune"
 
+- name: Setup Firewall
+  become: yes
+  hosts: myserver
+  tasks:
+    - name: Allow local network access
+      community.general.ufw:
+        rule: allow
+        src: "{{ item }}"
+      loop:
+        - 192.168.0.0/24
+        - fe80::/64
+    - name: Allow web server access from public net
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+      loop:
+        - "80"
+        - "443"
+    - name: Start Firewall
+      community.general.ufw:
+        state: enabled
+
 - name: Setup SMB
   become: yes
   hosts: myserver
