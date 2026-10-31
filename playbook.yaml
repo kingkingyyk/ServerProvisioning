@@ -111,7 +111,7 @@
     - name: Mount storage2
       ansible.posix.mount:
         path: /mnt/storage2
-        src: UUID=cc91262c-b84d-4385-bd30-601edd3be5ef
+        src: UUID=86aa14cf-0c03-4b2e-9d38-a6a1e852e915
         fstype: ext4
         opts: defaults,auto,users,rw,nofail,noatime
         state: present
@@ -223,8 +223,8 @@
         - /mnt/storage1/docker/deluge
         - /mnt/storage1/docker/drive
         - /mnt/storage1/docker/jellyfin
+        - /mnt/storage1/docker/lullame
         - /mnt/storage1/docker/nginx
-        - /mnt/storage1/docker/ollama
         - /mnt/storage1/docker/openspeedtest
         - /mnt/storage1/docker/pihole
         - /mnt/storage1/docker/route53
