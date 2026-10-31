@@ -10,6 +10,10 @@
       ansible.builtin.apt:
         name: net-tools
         state: present
+    - name: Install rocm
+      ansible.builtin.apt:
+        name: rocm
+        state: present
     - name: Create keyrings
       ansible.builtin.file:
         path: /etc/apt/keyrings
@@ -17,51 +21,6 @@
         group: root
         state: directory
         mode: "0755"
-
-- name: Install ROCm
-  become: yes
-  hosts: myserver
-  tasks:
-    - name: Add ROCm keyring
-      ansible.builtin.shell: >-
-        wget https://repo.radeon.com/rocm/rocm.gpg.key -4 -O - |
-        gpg --dearmor | tee /etc/apt/keyrings/rocm.gpg > /dev/null
-    - name: Register kernel-mode driver
-      ansible.builtin.shell: >-
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/amdgpu/6.2.4/ubuntu jammy main" \
-        | tee /etc/apt/sources.list.d/amdgpu.list
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: yes
-    - name: Register ROCm packages 1
-      ansible.builtin.shell: >-
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.2.4 jammy main" \
-        | tee --append /etc/apt/sources.list.d/rocm.list
-    - name: Register ROCm packages 2
-      ansible.builtin.shell: >-
-        echo 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600'
-        | tee /etc/apt/preferences.d/rocm-pin-600
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: yes
-    - name: Install amdgpu-dkms
-      ansible.builtin.apt:
-        name: amdgpu-dkms
-        state: present
-    - name: Reboot
-      ansible.builtin.reboot:
-    - name: Install ROCm
-      ansible.builtin.apt:
-        name: rocm
-        state: present
-    - name: Configure linker 1
-      ansible.builtin.shell: >-
-        tee --append /etc/ld.so.conf.d/rocm.conf <<EOF
-        /opt/rocm/lib
-        /opt/rocm/lib64
-        EOF
-    - name: Configure linker 2
-      ansible.builtin.shell: ldconfig
 
 - name: Install Docker
   become: yes
